@@ -1,0 +1,8 @@
+.gradle/
+.idea/
+local.properties
+build/
+**/build/
+_entry-offline/
+app/src/main/assets/web/src/
+app/src/main/assets/web/node_modules/

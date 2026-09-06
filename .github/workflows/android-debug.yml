@@ -1,0 +1,47 @@
+name: Build EntryMobile debug APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - entry-2.1.35-android-alpha
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'yarn'
+          cache-dependency-path: tools/entry-offline-yarn-cache-key.txt
+
+      - name: Install Yarn 1
+        run: npm install -g yarn@1.22.22
+
+      - name: Prepare exact Entry 2.1.35 renderer
+        run: ./tools/prepare-entry-web.sh
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EntryMobile-2.1.35-alpha-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          compression-level: 0
