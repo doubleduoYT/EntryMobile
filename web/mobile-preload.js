@@ -2,20 +2,28 @@
     const pending = new Map();
     const listeners = new Map();
     let sequence = 0;
-    const id = () => `em-${Date.now()}-${++sequence}`;
+    const requestId = () => `em-${Date.now()}-${++sequence}`;
+    const sharedObject = {
+        version: '2.1.35',
+        appName: 'entry-mobile',
+        roomIds: [],
+        updateCheckUrl: 'https://playentry.org',
+        moduleResourceUrl: 'http://localhost:23518/modules',
+        remoteModuleResourceUrl: 'http://playentry.org/modules',
+    };
 
     function request(start) {
         return new Promise((resolve, reject) => {
-            const requestId = id();
-            pending.set(requestId, { resolve, reject });
-            start(requestId);
+            const id = requestId();
+            pending.set(id, { resolve, reject });
+            start(id);
         });
     }
 
-    window.__entryMobileResolve = (requestId, ok, payload) => {
-        const item = pending.get(requestId);
+    window.__entryMobileResolve = (id, ok, payload) => {
+        const item = pending.get(id);
         if (!item) return;
-        pending.delete(requestId);
+        pending.delete(id);
         if (ok) item.resolve(payload);
         else item.reject(payload instanceof Error ? payload : new Error(payload?.message || String(payload)));
     };
@@ -26,14 +34,12 @@
         });
     };
 
-    window.ipcInvoke = (channel, ...args) => request((requestId) =>
-        Android.invoke(requestId, channel, JSON.stringify(args))
+    window.ipcInvoke = (channel, ...args) => request((id) =>
+        Android.invoke(id, channel, JSON.stringify(args))
     );
 
     window.ipcSend = (channel, ...args) => {
-        // Electron send() is fire-and-forget. We still invoke the native side so
-        // supported commands work; unsupported desktop-only commands are ignored.
-        request((requestId) => Android.invoke(requestId, channel, JSON.stringify(args))).catch(() => {});
+        request((id) => Android.invoke(id, channel, JSON.stringify(args))).catch(() => {});
     };
 
     window.ipcListen = (channel, listener) => {
@@ -43,35 +49,36 @@
         return {
             removeListener(name, fn) {
                 const current = listeners.get(name) || [];
-                listeners.set(name, current.filter((x) => x !== fn));
+                listeners.set(name, current.filter((item) => item !== fn));
             },
         };
     };
 
+    // The 2.1.35 renderer declares this API but does not currently use it.
+    // Android's JavaScript bridge is asynchronous, so keep a safe compatibility stub.
+    window.sendSync = () => null;
+
     window.dialog = {
         showOpenDialog(options = {}) {
-            return request((requestId) => Android.openDialog(requestId, JSON.stringify(options)));
+            return request((id) => Android.openDialog(id, JSON.stringify(options)));
         },
         showSaveDialog(options = {}) {
-            return request((requestId) => Android.saveDialog(requestId, JSON.stringify(options)));
+            return request((id) => Android.saveDialog(id, JSON.stringify(options)));
         },
         showMessageBox(options = {}) {
-            const yes = window.confirm(options.message || options.title || 'EntryMobile');
-            return Promise.resolve({ response: yes ? 0 : 1 });
+            const accepted = window.confirm(options.message || options.title || 'EntryMobile');
+            return Promise.resolve({ response: accepted ? 0 : 1 });
         },
         showMessageBoxSync(options = {}) {
             return window.confirm(options.message || options.title || 'EntryMobile') ? 0 : 1;
         },
     };
 
-    window.getSharedObject = () => ({
-        version: '2.1.35',
-        appName: 'entry-mobile',
-        roomIds: [],
-        updateCheckUrl: 'https://playentry.org',
-        moduleResourceUrl: 'http://localhost:23518/modules',
-        remoteModuleResourceUrl: 'http://playentry.org/modules',
-    });
+    window.getSharedObject = () => sharedObject;
+
+    // Desktop Entry rebuilds the native menu after a language change.
+    // There is no native Electron menu on Android, but the renderer calls this unconditionally.
+    window.initNativeMenu = () => {};
 
     window.onPageLoaded = (callback) => {
         if (document.readyState === 'complete') queueMicrotask(callback);
@@ -90,15 +97,20 @@
     window.weightsPath = () => '../../../node_modules/entry-js/weights';
     window.getEntryjsPath = () => '../../../node_modules/entry-js';
     window.getAppPathWithParams = (...parts) => `../../../${parts.join('/')}`;
-    window.getLang = (key) => (window.Lang && window.Lang[key]) || key;
+    window.getLang = (key) => {
+        const value = String(key).split('.').reduce((obj, part) =>
+            obj && Object.prototype.hasOwnProperty.call(obj, part) ? obj[part] : undefined,
+        window.Lang || {});
+        return value === undefined ? key : value;
+    };
     window.checkPermission = (type) => window.ipcInvoke('checkPermission', type);
     window.getPapagoHeaderInfo = () => window.ipcInvoke('getPapagoHeaderInfo');
     window.isOffline = true;
     window.isOsx = false;
 
-    // Minimal compatibility for code that expects Electron-ish process fields.
     if (!window.process) window.process = {};
     window.process.platform = 'android';
     window.process.env = window.process.env || { NODE_ENV: 'production' };
+    window.process.env.NODE_ENV = window.process.env.NODE_ENV || 'production';
     window.process.resourcesPath = '../../../node_modules/entry-js';
 })();
