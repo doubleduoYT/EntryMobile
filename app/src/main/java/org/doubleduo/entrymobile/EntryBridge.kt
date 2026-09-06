@@ -14,17 +14,35 @@ class EntryBridge(private val activity: MainActivity, private val session: Proje
             try {
                 val args = JSONArray(argsJson)
                 val result: Any? = when (channel) {
-                    "loadProject" -> session.loadProject(args.getString(0))
+                    "loadProject" -> JSONObject(session.loadProject(args.getString(0)))
                     "saveProject" -> {
-                        val project = when (val raw = args.get(0)) {
-                            is JSONObject -> raw.toString()
-                            else -> raw.toString()
-                        }
-                        session.saveProject(project, args.getString(1))
-                        true
+                        session.saveProject(args.getJSONObject(0).toString(), args.getString(1)); true
                     }
                     "resetDirectory" -> { session.clearProjectFiles(); true }
-                    "checkUpdate" -> JSONArray().put("2.1.35").put(JSONObject.NULL)
+                    "importPictures" -> session.importPictures(args.getJSONArray(0))
+                    "importSounds" -> session.importSounds(args.getJSONArray(0))
+                    "importPicturesFromResource" -> session.importPicturesFromResource(args.getJSONArray(0))
+                    "importSoundsFromResource" -> session.importSoundsFromResource(args.getJSONArray(0))
+                    "getExistSoundFilePath" -> session.getExistingSoundUrl(args.getJSONObject(0))
+                    "tempResourceDownload" -> {
+                        val item = args.getJSONObject(0)
+                        activity.copyLogicalResourceToUri(item.optString("fileurl"), args.getString(2), session)
+                        true
+                    }
+                    "staticDownload" -> {
+                        val segments = args.getJSONArray(0)
+                        val path = buildString {
+                            for (i in 0 until segments.length()) {
+                                if (i > 0) append('/')
+                                append(segments.getString(i))
+                            }
+                        }
+                        activity.copyAssetToUri("web/src/main/static/$path", args.getString(1)); true
+                    }
+                    "writeFile" -> { activity.writeJsonValueToUri(args.get(0), args.getString(1)); true }
+                    "checkUpdate" -> JSONArray().put("2.1.35").put(
+                        JSONObject().put("hasNewVersion", false).put("recentVersion", "2.1.35")
+                    )
                     "isValidAsarFile" -> true
                     "getOpenSourceText" -> ""
                     "getPapagoHeaderInfo" -> JSONObject.NULL
@@ -41,25 +59,10 @@ class EntryBridge(private val activity: MainActivity, private val session: Proje
     }
 
     @JavascriptInterface
-    fun openDialog(requestId: String, optionsJson: String) {
-        activity.openDocument(requestId, optionsJson)
-    }
+    fun openDialog(requestId: String, optionsJson: String) = activity.openDocument(requestId, optionsJson)
 
     @JavascriptInterface
-    fun saveDialog(requestId: String, optionsJson: String) {
-        activity.createDocument(requestId, optionsJson)
-    }
-
-    @JavascriptInterface
-    fun importResource(requestId: String, uri: String, kind: String) {
-        io.execute {
-            try {
-                activity.resolveJs(requestId, true, session.importRaw(uri, kind).toString())
-            } catch (t: Throwable) {
-                activity.resolveJs(requestId, false, JSONObject().put("message", t.message).toString())
-            }
-        }
-    }
+    fun saveDialog(requestId: String, optionsJson: String) = activity.createDocument(requestId, optionsJson)
 
     private fun normalize(value: Any?): String = when (value) {
         null, JSONObject.NULL -> "null"
