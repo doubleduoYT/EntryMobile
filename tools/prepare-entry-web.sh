@@ -14,6 +14,12 @@ if [[ ! -d "$WORK/.git" ]]; then git clone https://github.com/entrylabs/entry-of
 git -C "$WORK" fetch --depth=1 origin "$ENTRY_OFFLINE_COMMIT"
 git -C "$WORK" checkout --force "$ENTRY_OFFLINE_COMMIT"
 
+# Entry 2.1.35 was primarily built on case-insensitive desktop filesystems.
+# renderEntry imports `components/Index`, while the tracked file is `index.tsx`.
+# Patch only this casing typo so Linux/Android CI can reproduce the Windows build.
+sed -i "s#'./components/Index'#'./components/index'#g" "$WORK/src/renderer/renderEntry.tsx"
+sed -i 's#"./components/Index"#"./components/index"#g' "$WORK/src/renderer/renderEntry.tsx"
+
 pushd "$WORK" >/dev/null
 yarn install --ignore-scripts --network-timeout 600000
 NODE_ENV=production NODE_OPTIONS=--openssl-legacy-provider ./node_modules/.bin/webpack --config webpack.config.js
